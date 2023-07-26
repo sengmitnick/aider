@@ -4,11 +4,12 @@ import hashlib
 import json
 import os
 import sys
-import threading
 import time
+import threading
 import traceback
 from json.decoder import JSONDecodeError
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Callable, Optional
 
 import openai
 from jsonschema import Draft7Validator
@@ -22,6 +23,7 @@ from aider.history import ChatSummary
 from aider.repo import GitRepo
 from aider.repomap import RepoMap
 from aider.sendchat import send_with_retries
+from aider.io import InputOutput
 
 from ..dump import dump  # noqa: F401
 
@@ -112,6 +114,7 @@ class Coder:
         code_theme="default",
         stream=True,
         use_git=True,
+        on_commit: Optional[Callable[[], None]] = None,
     ):
         if not fnames:
             fnames = []
@@ -124,7 +127,7 @@ class Coder:
         self.cur_messages = []
         self.done_messages = []
 
-        self.io = io
+        self.io: InputOutput = io
         self.stream = stream
 
         if not auto_commits:
@@ -136,6 +139,7 @@ class Coder:
         self.code_theme = code_theme
 
         self.dry_run = dry_run
+        self.on_commit = on_commit
         self.pretty = pretty
 
         if pretty:
@@ -361,6 +365,24 @@ class Coder:
 
         self.last_keyboard_interrupt = now
 
+    def should_dirty_commit(self, inp):
+        cmds = self.commands.matching_commands(inp)
+        if cmds:
+            matching_commands, _, _ = cmds
+            if len(matching_commands) == 1:
+                cmd = matching_commands[0][1:]
+                if cmd in "add clear commit diff drop exit help ls tokens".split():
+                    return
+
+        thresh = 2  # seconds
+        if self.last_keyboard_interrupt and now - self.last_keyboard_interrupt < thresh:
+            self.io.tool_error("\n\n^C KeyboardInterrupt")
+            sys.exit()
+
+        self.io.tool_error("\n\n^C again to exit")
+
+        self.last_keyboard_interrupt = now
+
     def summarize_start(self):
         if not self.summarizer.too_big(self.done_messages):
             return
@@ -408,6 +430,12 @@ class Coder:
         )
 
         if self.should_dirty_commit(inp) and self.dirty_commit():
+            self.io.tool_output("Git repo has uncommitted changes, preparing commit...")
+            self.commit(ask=True, which="repo_files")
+
+            # files changed, move cur messages back behind the files messages
+            self.move_back_cur_messages(self.gpt_prompts.files_content_local_edits)
+
             if inp.strip():
                 self.io.tool_output("Use up-arrow to retry previous command:", inp)
             return
@@ -697,6 +725,150 @@ class Coder:
 
     def render_incremental_response(self, final):
         return self.partial_response_content
+
+    def get_context_from_history(self, history):
+        context = ""
+        if history:
+            for msg in history:
+                context += "\n" + msg["role"].upper() + ": " + msg["content"] + "\n"
+        return context
+
+    def get_commit_message(self, diffs, context):
+        if len(diffs) >= 4 * 1024 * 4:
+            self.io.tool_error(
+                f"Diff is too large for {models.GPT35.name} to generate a commit message."
+            )
+            return
+
+        diffs = "# Diffs:\n" + diffs
+
+        messages = [
+            dict(role="system", content=prompts.commit_system),
+            dict(role="user", content=context + diffs),
+        ]
+
+        try:
+            interrupted = self.send(
+                messages,
+                model=models.GPT35.name,
+                silent=True,
+            )
+        except openai.error.InvalidRequestError:
+            self.io.tool_error(
+                f"Failed to generate commit message using {models.GPT35.name} due to an invalid"
+                " request."
+            )
+            return
+
+        commit_message = self.partial_response_content
+        commit_message = commit_message.strip()
+        if commit_message and commit_message[0] == '"' and commit_message[-1] == '"':
+            commit_message = commit_message[1:-1].strip()
+
+        if interrupted:
+            self.io.tool_error(
+                f"Unable to get commit message from {models.GPT35.name}. Use /commit to try again."
+            )
+            return
+
+        return commit_message
+
+    def get_diffs(self, *args):
+        if self.pretty:
+            args = ["--color"] + list(args)
+
+        diffs = self.repo.git.diff(*args)
+        return diffs
+
+    def commit(self, history=None, prefix=None, ask=False, message=None, which="chat_files"):
+        if self.on_commit is not None:
+            self.on_commit()
+        repo = self.repo
+        if not repo:
+            return
+
+        if not repo.is_dirty():
+            return
+
+        def get_dirty_files_and_diffs(file_list):
+            diffs = ""
+            relative_dirty_files = []
+            for fname in file_list:
+                relative_fname = self.get_rel_fname(fname)
+                relative_dirty_files.append(relative_fname)
+
+                try:
+                    current_branch_commit_count = len(
+                        list(self.repo.iter_commits(self.repo.active_branch))
+                    )
+                except git.exc.GitCommandError:
+                    current_branch_commit_count = None
+
+                if not current_branch_commit_count:
+                    continue
+
+                these_diffs = self.get_diffs("HEAD", "--", relative_fname)
+
+                if these_diffs:
+                    diffs += these_diffs + "\n"
+
+            return relative_dirty_files, diffs
+
+        if which == "repo_files":
+            all_files = [os.path.join(self.root, f) for f in self.get_all_relative_files()]
+            relative_dirty_fnames, diffs = get_dirty_files_and_diffs(all_files)
+        elif which == "chat_files":
+            relative_dirty_fnames, diffs = get_dirty_files_and_diffs(self.abs_fnames)
+        else:
+            raise ValueError(f"Invalid value for 'which': {which}")
+
+        # if self.show_diffs or ask:
+        #     # don't use io.tool_output() because we don't want to log or further colorize
+        #     print(diffs)
+
+        context = self.get_context_from_history(history)
+        if message:
+            commit_message = message
+        else:
+            self.io.tool_output("Generating commit message...")
+            commit_message = self.get_commit_message(diffs, context)
+            if commit_message:
+                self.io.tool_output(f"\nProposed commit message: {commit_message}")
+
+        if not commit_message:
+            commit_message = "work in progress"
+
+        if prefix:
+            commit_message = prefix + commit_message
+
+        if ask:
+            if which == "repo_files":
+                self.io.tool_output("Git repo has uncommitted changes.")
+            else:
+                self.io.tool_output("Files have uncommitted changes.")
+
+            res = self.io.prompt_ask(
+                "Commit before the chat proceeds [y/n/commit message]?",
+                default=commit_message,
+            ).strip()
+            self.last_asked_for_commit_time = self.get_last_modified()
+
+            self.io.tool_output()
+
+            if res.lower() in ["n", "no"]:
+                self.io.tool_error("Skipped commmit.")
+                return
+            if res.lower() not in ["y", "yes"] and res:
+                commit_message = res
+
+        repo.git.add(*relative_dirty_fnames)
+
+        full_commit_message = commit_message + "\n\n# Aider chat conversation:\n\n" + context
+        repo.git.commit("-m", full_commit_message, "--no-verify")
+        commit_hash = repo.head.commit.hexsha[:7]
+        self.io.tool_output(f"Commit {commit_hash} {commit_message}")
+
+        return commit_hash, commit_message
 
     def get_rel_fname(self, fname):
         return os.path.relpath(fname, self.root)

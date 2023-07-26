@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+from typing import Callable, Optional, Any
 
 import configargparse
 import git
@@ -15,10 +16,9 @@ from aider.versioncheck import check_version
 from .dump import dump  # noqa: F401
 
 
-def get_git_root():
-    """Try and guess the git repo, since the conf.yml can be at the repo root"""
+def get_git_root(workspace_path: Optional[str] = None) -> Optional[str]:
     try:
-        repo = git.Repo(search_parent_directories=True)
+        repo = git.Repo(path=workspace_path, search_parent_directories=True)
         return repo.working_tree_dir
     except git.InvalidGitRepositoryError:
         return None
@@ -43,7 +43,7 @@ def guessed_wrong_repo(io, git_root, fnames, git_dname):
     return str(check_repo)
 
 
-def setup_git(git_root, io):
+def setup_git(git_root: str, io: Any) -> Optional[str]:
     if git_root:
         return git_root
 
@@ -69,7 +69,7 @@ def setup_git(git_root, io):
     return repo.working_tree_dir
 
 
-def check_gitignore(git_root, io, ask=True):
+def check_gitignore(git_root: str, io: Any, ask: bool = True, coder: Optional[Any] = None) -> None:
     if not git_root:
         return
 
@@ -90,18 +90,28 @@ def check_gitignore(git_root, io, ask=True):
         content += "\n"
     content += pat + "\n"
     io.write_text(gitignore_file, content)
-
+    if coder is not None:
+        print("committing")
+        coder.commit(ask=True, which="repo_files")
     io.tool_output(f"Added {pat} to .gitignore")
 
 
-def main(argv=None, input=None, output=None, force_git_root=None):
-    if argv is None:
-        argv = sys.argv[1:]
+def main(args=None,
+         on_write: Optional[Callable[[str, str], str]] = None,
+         on_commit: Optional[Callable[[], None]] = None,
+         input=None,
+         output=None,
+         workspace_path=None) -> int:
+    if args is None:
+        args = sys.argv[1:]
 
     if force_git_root:
         git_root = force_git_root
     else:
         git_root = get_git_root()
+        
+    if workspace_path:
+        os.chdir(workspace_path)
 
     conf_fname = Path(".aider.conf.yml")
 
@@ -395,6 +405,7 @@ def main(argv=None, input=None, output=None, force_git_root=None):
         tool_output_color=args.tool_output_color,
         tool_error_color=args.tool_error_color,
         dry_run=args.dry_run,
+        on_write=on_write,
     )
 
     fnames = [str(Path(fn).resolve()) for fn in args.files]
@@ -436,10 +447,6 @@ def main(argv=None, input=None, output=None, force_git_root=None):
         args.pretty = False
         io.tool_output("VSCode terminal detected, pretty output has been disabled.")
 
-    if args.git:
-        git_root = setup_git(git_root, io)
-        check_gitignore(git_root, io)
-
     def scrub_sensitive_info(text):
         # Replace sensitive information with placeholder
         return text.replace(args.openai_api_key, "***")
@@ -475,29 +482,30 @@ def main(argv=None, input=None, output=None, force_git_root=None):
             setattr(openai, mod_key, val)
             io.tool_output(f"Setting openai.{mod_key}={val}")
 
-    try:
-        coder = Coder.create(
-            main_model,
-            args.edit_format,
-            io,
-            ##
-            fnames=fnames,
-            git_dname=git_dname,
-            pretty=args.pretty,
-            show_diffs=args.show_diffs,
-            auto_commits=args.auto_commits,
-            dirty_commits=args.dirty_commits,
-            dry_run=args.dry_run,
-            map_tokens=args.map_tokens,
-            verbose=args.verbose,
-            assistant_output_color=args.assistant_output_color,
-            code_theme=args.code_theme,
-            stream=args.stream,
-            use_git=args.git,
-        )
-    except ValueError as err:
-        io.tool_error(str(err))
-        return 1
+    coder = Coder.create(
+        main_model,
+        args.edit_format,
+        io,
+        ##
+        fnames=args.files,
+        git_dname=git_dname,
+        pretty=args.pretty,
+        show_diffs=args.show_diffs,
+        auto_commits=args.auto_commits,
+        dirty_commits=args.dirty_commits,
+        dry_run=args.dry_run,
+        map_tokens=args.map_tokens,
+        verbose=args.verbose,
+        assistant_output_color=args.assistant_output_color,
+        code_theme=args.code_theme,
+        stream=args.stream,
+        use_git=args.git,
+        on_commit=on_commit,
+    )
+    
+    if args.git:
+        git_root = setup_git(git_root, io)
+        check_gitignore(git_root, io, coder=coder)    
 
     if args.show_repo_map:
         repo_map = coder.get_repo_map()

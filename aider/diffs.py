@@ -1,10 +1,11 @@
 import difflib
 import sys
+from typing import List, Optional
 
 from .dump import dump  # noqa: F401
 
 
-def main():
+def main() -> None:
     if len(sys.argv) != 3:
         print("Usage: python diffs.py file1 file")
         sys.exit(1)
@@ -23,7 +24,7 @@ def main():
         input()
 
 
-def create_progress_bar(percentage):
+def create_progress_bar(percentage: float) -> str:
     block = "█"
     empty = "░"
     total_blocks = 30
@@ -33,14 +34,14 @@ def create_progress_bar(percentage):
     return bar
 
 
-def assert_newlines(lines):
+def assert_newlines(lines: List[str]) -> None:
     if not lines:
         return
     for line in lines[:-1]:
         assert line and line[-1] == "\n", line
 
 
-def diff_partial_update(lines_orig, lines_updated, final=False, fname=None):
+def diff_partial_update(lines_orig: List[str], lines_updated: List[str], final: bool = False, fname: Optional[str] = None) -> str:
     """
     Given only the first part of an updated file, show the diff while
     ignoring the block of "deleted" lines that are past the end of the
@@ -103,7 +104,7 @@ def diff_partial_update(lines_orig, lines_updated, final=False, fname=None):
     return show
 
 
-def find_last_non_deleted(lines_orig, lines_updated):
+def find_last_non_deleted(lines_orig: List[str], lines_updated: List[str]) -> int:
     diff = list(difflib.ndiff(lines_orig, lines_updated))
 
     num_orig = 0

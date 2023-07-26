@@ -14,7 +14,7 @@ class Model:
     prompt_price = None
     completion_price = None
 
-    def __init__(self, name):
+    def __init__(self, name: str) -> None:
         self.name = name
 
         tokens = None
@@ -61,13 +61,13 @@ class Model:
 
         raise ValueError(f"Unsupported model: {name}")
 
-    def is_gpt4(self):
+    def is_gpt4(self) -> bool:
         return self.name.startswith("gpt-4")
 
-    def is_gpt35(self):
+    def is_gpt35(self) -> bool:
         return self.name.startswith("gpt-3.5-turbo")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.name
 
 
