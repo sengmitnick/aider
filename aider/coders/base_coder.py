@@ -751,7 +751,6 @@ class Coder:
             interrupted = self.send(
                 messages,
                 model=models.GPT35.name,
-                silent=True,
             )
         except openai.error.InvalidRequestError:
             self.io.tool_error(
