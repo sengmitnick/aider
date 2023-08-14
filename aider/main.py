@@ -101,7 +101,8 @@ def main(args=None,
          on_commit: Optional[Callable[[], None]] = None,
          input=None,
          output=None,
-         workspace_path=None) -> int:
+         workspace_path=None,
+         force_git_root=None,) -> int:
     if args is None:
         args = sys.argv[1:]
 
@@ -380,7 +381,7 @@ def main(args=None,
         ),
     )
 
-    args = parser.parse_args(argv)
+    args = parser.parse_args(args)
 
     if args.dark_mode:
         args.user_input_color = "#32FF32"
