@@ -526,7 +526,9 @@ class Coder:
         self.update_cur_messages(edited)
 
         if edited:
-            if self.repo and self.auto_commits and not self.dry_run:
+            if self.on_commit is not None:
+                self.on_commit()
+            if self.repo and self.auto_commits and not self.dry_run:                
                 saved_message = self.auto_commit()
             elif hasattr(self.gpt_prompts, "files_content_gpt_edits_no_repo"):
                 saved_message = self.gpt_prompts.files_content_gpt_edits_no_repo
