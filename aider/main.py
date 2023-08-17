@@ -105,6 +105,7 @@ def main(args=None,
          force_git_root=None,) -> int:
     if args is None:
         args = sys.argv[1:]
+    original_args = args
 
     if force_git_root:
         git_root = force_git_root
@@ -438,7 +439,7 @@ def main(args=None,
     if args.git and not force_git_root:
         right_repo_root = guessed_wrong_repo(io, git_root, fnames, git_dname)
         if right_repo_root:
-            return main(args, on_write, on_commit, input, output, right_repo_root)
+            return main(original_args, on_write, on_commit, input, output, right_repo_root)
 
     io.tool_output(f"Aider v{__version__}")
 
