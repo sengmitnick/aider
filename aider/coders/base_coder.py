@@ -857,7 +857,7 @@ class Coder:
             self.io.tool_output()
 
             if res.lower() in ["n", "no"]:
-                self.io.tool_error("Skipped commmit.")
+                self.io.tool_error("Skipped commit.")
                 return
             if res.lower() not in ["y", "yes"] and res:
                 commit_message = res
@@ -1056,7 +1056,7 @@ class Coder:
             default="y",
         ).strip()
         if res.lower() in ["n", "no"]:
-            self.io.tool_error("Skipped commmit.")
+            self.io.tool_error("Skipped commit.")
             return
         if res.lower() in ["y", "yes"]:
             message = None
