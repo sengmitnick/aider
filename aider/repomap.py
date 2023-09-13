@@ -81,6 +81,7 @@ class RepoMap:
         self,
         map_tokens=1024,
         root=None,
+        ctags_full=False,
         main_model=models.GPT4,
         io=None,
         repo_content_prefix=None,
@@ -88,6 +89,7 @@ class RepoMap:
     ):
         self.io = io
         self.verbose = verbose
+        self.ctags_full = ctags_full
 
         if not root:
             root = os.getcwd()
@@ -355,7 +357,7 @@ class RepoMap:
             definers = defines[ident]
             for referencer, num_refs in Counter(references[ident]).items():
                 for definer in definers:
-                    if referencer == definer:
+                    if referencer == definer and self.ctags_full is False:
                         continue
                     G.add_edge(referencer, definer, weight=num_refs, ident=ident)
 
