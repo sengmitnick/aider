@@ -81,11 +81,11 @@ class RepoMap:
         self,
         map_tokens=1024,
         root=None,
-        ctags_full=False,
         main_model=models.GPT4,
         io=None,
         repo_content_prefix=None,
         verbose=False,
+        ctags_full=False,
     ):
         self.io = io
         self.verbose = verbose
