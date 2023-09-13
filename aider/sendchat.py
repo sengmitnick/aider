@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 
 import backoff
 import openai
@@ -36,10 +37,14 @@ CACHE = None
 )
 def send_with_retries(model, messages, functions, stream):
     kwargs = dict(
-        model=model,
+        model="openai/"+model,
         messages=messages,
         temperature=0,
         stream=stream,
+        headers={
+            'HTTP-Referer': os.getenv('OPENROUTER_HTTP_REFERER'),
+            'X-Title': os.getenv('OPENROUTER_X_TITLE')
+        },
     )
     if functions is not None:
         kwargs["functions"] = functions
