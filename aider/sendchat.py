@@ -48,7 +48,7 @@ def send_with_retries(model, messages, functions, stream):
         },
     )
 
-    if is_openrouter == 1:
+    if is_openrouter == "1":
         kwargs["model"] = "openai/"+model
 
     if functions is not None:

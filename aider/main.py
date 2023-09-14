@@ -478,7 +478,7 @@ def main(args=None,
     is_openrouter = os.getenv('IS_OPENROUTER')
     openai.api_key = args.openai_api_key
 
-    if is_openrouter == 1:
+    if is_openrouter == "1":
         openai.api_key = os.getenv('OPENROUTER_API_KEY')
         openai.api_base = os.getenv('OPENROUTER_API_BASE')
     
