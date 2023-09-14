@@ -475,7 +475,13 @@ def main(args=None,
 
     main_model = models.Model(args.model)
 
+    is_openrouter = os.getenv('IS_OPENROUTER')
     openai.api_key = args.openai_api_key
+
+    if is_openrouter is 1:
+        openai.api_key = os.getenv('OPENROUTER_API_KEY')
+        openai.api_base = os.getenv('OPENROUTER_API_BASE')
+    
     for attr in ("base", "type", "version", "deployment_id", "engine"):
         arg_key = f"openai_api_{attr}"
         val = getattr(args, arg_key)

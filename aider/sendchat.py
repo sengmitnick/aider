@@ -36,8 +36,9 @@ CACHE = None
     ),
 )
 def send_with_retries(model, messages, functions, stream):
+    is_openrouter = os.getenv('IS_OPENROUTER')
     kwargs = dict(
-        model="openai/"+model,
+        model=model,
         messages=messages,
         temperature=0,
         stream=stream,
@@ -46,6 +47,10 @@ def send_with_retries(model, messages, functions, stream):
             'X-Title': os.getenv('OPENROUTER_X_TITLE')
         },
     )
+
+    if is_openrouter is 1:
+        kwargs["model"] = "openai/"+model
+
     if functions is not None:
         kwargs["functions"] = functions
 
